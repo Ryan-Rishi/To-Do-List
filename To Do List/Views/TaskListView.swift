@@ -44,6 +44,10 @@ struct TaskListView: View {
                     Button("Add New Task") {
                         self.presentAddNewItem.toggle()
                     }
+                    .padding(10)
+                    .background(Color.blue)
+                    .foregroundColor(.white)
+                    .cornerRadius(8)
                 }
                 .padding()
             }
