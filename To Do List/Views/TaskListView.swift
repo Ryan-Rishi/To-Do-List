@@ -24,8 +24,10 @@ struct TaskListView: View {
                     .padding()
                 
                 List {
-                    ForEach(taskListVM.TaskCellViewModels) { taskCellVM in
-                        TaskCell(taskCellVM: taskCellVM)
+                    ForEach(taskListVM.taskCellViewModels) { taskCellVM in
+                        TaskCell(taskCellVM: taskCellVM) { task in
+                            self.taskListVM.updateTask(task: task)
+                        }
                     }
                     if presentAddNewItem {
                         TaskCell(taskCellVM: TaskCellViewModel(task: Task(title: "", completed: false))) { task in
@@ -79,7 +81,6 @@ class Coordinator: NSObject, CLLocationManagerDelegate {
     }
 }
 
-// ... (rest of your code for TaskCell and TaskListView_Previews remains the same)
 
 struct TaskCell: View {
     

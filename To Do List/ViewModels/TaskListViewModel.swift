@@ -8,25 +8,30 @@
 import Foundation
 import Combine
 
-
-class TaskListViewModel : ObservableObject {
+class TaskListViewModel: ObservableObject {
     @Published var taskRepository = TaskList()
-    @Published var TaskCellViewModels = [TaskCellViewModel]()
-    
-    private var cancellabels = Set<AnyCancellable>()
-    
+    @Published var taskCellViewModels = [TaskCellViewModel]()
+
+    private var cancellables = Set<AnyCancellable>()
     init() {
-        taskRepository.$tasks.map{ tasks in
-            tasks.map{ task in
-                TaskCellViewModel(task : task)
-                
+        taskRepository.$tasks
+            .map { tasks in
+                tasks.map { task in
+                    TaskCellViewModel(task: task)
+                }
             }
-        }
-        .assign(to: \.TaskCellViewModels, on: self)
-        .store(in: &cancellabels)
+            .assign(to: \.taskCellViewModels, on: self)
+            .store(in: &cancellables)
     }
-    
-    func addTask(task: Task){
-        taskRepository.addTask(task)
+
+    func addTask(task: Task) {
+        var taskWithTime = task
+        taskWithTime.createdTime = Date()
+        taskRepository.addTask(taskWithTime)
+    }
+
+    func updateTask(task: Task) {
+        taskRepository.updateTask(task)
     }
 }
+

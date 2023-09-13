@@ -15,6 +15,8 @@ import CoreLocation
 class TaskList : NSObject, ObservableObject, CLLocationManagerDelegate{
     
     let db = Firestore.firestore()
+    let baseURL = "https://firestore.googleapis.com/v1/projects/todolist-d0e93/databases/(default)/documents/tasks"
+
     
     @Published var tasks = [Task]()
     @Published var latitude: Double = 0.0
@@ -29,55 +31,96 @@ class TaskList : NSObject, ObservableObject, CLLocationManagerDelegate{
         self.locationManager.startUpdatingLocation()
     }
     
-    func loadData(){
-        let userID = Auth.auth().currentUser?.uid
-        
-        db.collection("tasks")
-        // we will sort by createdTime
-            .order(by: "createdTime")
-            .whereField("userID", isEqualTo: userID)
-            .addSnapshotListener{(QuerySnapshot , error) in
-                // if QuerySnapshot is not nil
-                if let QuerySnapshot = QuerySnapshot{
-                    // get all documents that has fetched and
-                    self.tasks =  QuerySnapshot.documents.compactMap { document in
-                        do {
-                            let x = try?  document.data(as: Task.self)
-                            return x
+    func loadData() {
+        guard let url = URL(string: baseURL) else {
+            print("Invalid URL")
+            return
+        }
+
+        let task = URLSession.shared.dataTask(with: url) { (data, response, error) in
+            if let error = error {
+                print("Error fetching tasks: \(error)")
+                return
+            }
+
+            if let data = data {
+                do {
+                    if let json = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any],
+                       let documents = json["documents"] as? [[String: Any]] {
+                        
+                        var newTasks: [Task] = []
+                        
+                        for document in documents {
+                            if let fields = document["fields"] as? [String: Any],
+                               let titleField = fields["title"] as? [String: Any],
+                               let title = titleField["stringValue"] as? String,
+                               let completedField = fields["completed"] as? [String: Any],
+                               let completed = completedField["booleanValue"] as? Bool {
+                                
+                                let task = Task(title: title, completed: completed)
+                                newTasks.append(task)
+                            }
                         }
-                        catch {
-                            print(error.localizedDescription)
+                        
+                        DispatchQueue.main.async {
+                            self.tasks = newTasks
                         }
-                        return nil
                     }
+                } catch {
+                    print("JSON parsing error: \(error)")
                 }
             }
+        }
+        task.resume()
     }
+
+
     func addTask(_ task: Task) {
         guard let userID = Auth.auth().currentUser?.uid else {
             print("No user ID found")
             return
         }
 
-        var addedTask = task
-        addedTask.userID = userID
-        
-        var ref: DocumentReference? = nil
-        ref = db.collection("tasks").addDocument(data: [
-            "title": addedTask.title,
-            "completed": addedTask.completed,
-            "userID": userID,
-            "createdTime": FieldValue.serverTimestamp() // Server-generated timestamp
-        ]) { err in
-            if let err = err {
-                print("Error adding document: \(err)")
+        guard let url = URL(string: baseURL) else {
+            print("Invalid URL")
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let taskData: [String: Any] = [
+            "fields": [
+                "title": ["stringValue": task.title],
+                "completed": ["booleanValue": task.completed],
+                "userID": ["stringValue": userID]
+            ]
+        ]
+
+        do {
+            let jsonData = try JSONSerialization.data(withJSONObject: taskData, options: .prettyPrinted)
+            request.httpBody = jsonData
+        } catch {
+            print("Error encoding task: \(error)")
+            return
+        }
+
+        let task = URLSession.shared.dataTask(with: request) { (data, response, error) in
+            if let error = error {
+                print("Error adding task: \(error)")
             } else {
-                print("Document added with ID: \(ref!.documentID)")
-                // Do not manually set @DocumentID properties
-                // addedTask.id = ref!.documentID
+                if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
+                    self.loadData()  // Refetch all tasks
+                }
             }
         }
+
+        task.resume()
     }
+
+
+
 
 
     func updateTask(_ task: Task) {
@@ -86,18 +129,42 @@ class TaskList : NSObject, ObservableObject, CLLocationManagerDelegate{
             return
         }
 
-        do {
-            try db.collection("tasks").document(taskID).setData(from: task) { error in
-                if let error = error {
-                    print("Error updating document: \(error)")
-                } else {
-                    print("Document successfully updated!")
-                }
-            }
-        } catch let error {
-            print("Error updating task in Firestore: \(error)")
+        guard let url = URL(string: "\(baseURL)/\(taskID)?updateMask.fieldPaths=title,completed") else {
+            print("Invalid URL")
+            return
         }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "UPDATE"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let taskData: [String: Any] = [
+            "fields": [
+                "title": ["stringValue": task.title],
+                "completed": ["booleanValue": task.completed]
+            ]
+        ]
+
+        do {
+            let jsonData = try JSONSerialization.data(withJSONObject: taskData, options: .prettyPrinted)
+            request.httpBody = jsonData
+        } catch {
+            print("Error encoding task: \(error)")
+            return
+        }
+
+        let task = URLSession.shared.dataTask(with: request) { (data, response, error) in
+            if let error = error {
+                print("Error updating task: \(error)")
+            } else if let data = data,
+                      let json = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any] {
+                print("Task updated: \(json)")
+            }
+        }
+
+        task.resume()
     }
+
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         if let location = locations.first {

@@ -13,7 +13,7 @@ struct Task : Codable, Identifiable {
     @DocumentID var id : String?
     var title : String
     var completed : Bool
-    @ServerTimestamp var createdTime : Timestamp?
+    var createdTime: Date = Date()
     var userID : String?
 
 }
